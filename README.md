@@ -25,12 +25,22 @@ ACE enables AI agents to **learn and improve** by accumulating strategies in a "
 
 ##  Installation
 
+### Using pip
 ```bash
 # Default (FAISS vector store)
 pip install ace-context-engineering
 
 # With ChromaDB support
 pip install ace-context-engineering[chromadb]
+```
+
+### Using uv (Recommended)
+```bash
+# Default (FAISS vector store)
+uv add ace-context-engineering
+
+# With ChromaDB support
+uv add ace-context-engineering[chromadb]
 ```
 
 **Environment Setup:**
