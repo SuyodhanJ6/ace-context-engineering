@@ -141,25 +141,28 @@ curator.merge_delta(delta)
 ##  Architecture
 
 ```
-
-  Your Agent       ← Any LangChain agent
-  (Generator)    
-
-         
-    
-     ACEAgent  ← Automatic context injection
-     Wrapper 
-    
-         
-    
-      Playbook     ← Semantic knowledge retrieval
-      Manager    
-    
-         
-    
-    Reflector      ← Analyzes feedback
-    + Curator      ← Updates playbook
-    
+┌─────────────────┐
+│   Your Agent    │ ← Any LangChain agent
+│   (Generator)   │
+└─────────┬───────┘
+          │
+          ▼
+┌─────────────────┐
+│   ACEAgent      │ ← Automatic context injection
+│   Wrapper       │
+└─────────┬───────┘
+          │
+          ▼
+┌─────────────────┐
+│   Playbook      │ ← Semantic knowledge retrieval
+│   Manager       │
+└─────────────────┘
+          ▲
+          │
+┌─────────────────┐
+│   Reflector     │ ← Analyzes feedback
+│   + Curator     │ ← Updates playbook
+└─────────────────┘
 ```
 
 ### Components
