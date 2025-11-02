@@ -211,6 +211,10 @@ class TestACELearningCycle:
         
         print("\n    Learning system prioritizes helpful content!")
     
+    @pytest.mark.skipif(
+        not os.getenv("OPENAI_API_KEY"),
+        reason="OpenAI API key required for embedding model"
+    )
     def test_bullet_lifecycle_with_curator(self, temp_storage_path):
         """
         Test complete bullet lifecycle with Curator operations.

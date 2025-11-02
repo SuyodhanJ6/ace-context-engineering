@@ -2,10 +2,16 @@
 Test dynamic prompt templates for auto-critique functionality.
 """
 
+import pytest
+import os
 from ace import ACEConfig, ACEAgent, PlaybookManager, Reflector
 from langchain.chat_models import init_chat_model
 
 
+@pytest.mark.skipif(
+    not os.getenv("OPENAI_API_KEY"),
+    reason="OpenAI API key required"
+)
 def test_default_auto_critique():
     """Test with default auto-critique template"""
     print("=" * 80)
@@ -46,6 +52,10 @@ def test_default_auto_critique():
     print("\n DEFAULT TEMPLATE TEST PASSED!\n")
 
 
+@pytest.mark.skipif(
+    not os.getenv("OPENAI_API_KEY"),
+    reason="OpenAI API key required"
+)
 def test_custom_auto_critique():
     """Test with custom auto-critique template"""
     print("=" * 80)
@@ -115,6 +125,10 @@ Output JSON:
     print("\n CUSTOM TEMPLATE TEST PASSED!\n")
 
 
+@pytest.mark.skipif(
+    not os.getenv("OPENAI_API_KEY"),
+    reason="OpenAI API key required"
+)
 def test_domain_specific_template():
     """Test domain-specific auto-critique template"""
     print("=" * 80)

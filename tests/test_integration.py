@@ -51,6 +51,10 @@ class TestACEIntegration:
         # Just check it initialized correctly
         assert str(reflector.storage_path) == str(temp_storage_path)
     
+    @pytest.mark.skipif(
+        not os.getenv("OPENAI_API_KEY"),
+        reason="OpenAI API key required for embedding model"
+    )
     def test_curator_initialization(self, temp_storage_path):
         """Test Curator initialization."""
         playbook = PlaybookManager(
@@ -67,6 +71,10 @@ class TestACEIntegration:
         # Just check it initialized correctly
         assert str(curator.storage_path) == str(temp_storage_path)
     
+    @pytest.mark.skipif(
+        not os.getenv("OPENAI_API_KEY"),
+        reason="OpenAI API key required for embedding model"
+    )
     def test_config_to_playbook_flow(self, temp_storage_path):
         """Test creating PlaybookManager from ACEConfig."""
         config = ACEConfig(

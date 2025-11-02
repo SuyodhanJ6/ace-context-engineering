@@ -2,10 +2,16 @@
 Quick test to verify auto_feedback True/False modes work correctly.
 """
 
+import pytest
+import os
 from ace import ACEConfig, ACEAgent, PlaybookManager
 from langchain.chat_models import init_chat_model
 
 
+@pytest.mark.skipif(
+    not os.getenv("OPENAI_API_KEY"),
+    reason="OpenAI API key required for embedding model"
+)
 def test_manual_mode():
     """Test manual feedback mode (auto_feedback=False)"""
     print("=" * 80)
@@ -49,6 +55,10 @@ def test_manual_mode():
     print("\n MANUAL MODE TEST PASSED!\n")
 
 
+@pytest.mark.skipif(
+    not os.getenv("OPENAI_API_KEY"),
+    reason="OpenAI API key required for embedding model"
+)
 def test_auto_mode():
     """Test auto feedback mode (auto_feedback=True)"""
     print("=" * 80)
@@ -80,6 +90,10 @@ def test_auto_mode():
     print("\n AUTO MODE TEST PASSED!\n")
 
 
+@pytest.mark.skipif(
+    not os.getenv("OPENAI_API_KEY"),
+    reason="OpenAI API key required for embedding model"
+)
 def test_toggle_mode():
     """Test toggling between modes"""
     print("=" * 80)
