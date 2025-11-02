@@ -27,13 +27,13 @@ jobs:
         curl -LsSf https://astral.sh/uv/install.sh | sh
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
     
-    - name: Install dependencies
+    - name: Install dependencies with dev extras
       run: |
-        uv sync --dev
+        uv sync --extra dev
     
     - name: Test with pytest
       run: |
-        uv run pytest tests/ -v --tb=short
+        uv run python -m pytest tests/ -v --tb=short
       continue-on-error: false
 
   publish:
