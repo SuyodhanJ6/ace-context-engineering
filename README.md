@@ -89,6 +89,14 @@ agent = ACEAgent(
 response = agent.invoke([
     {"role": "user", "content": "Process payment for order #12345"}
 ])
+
+# 4. Provide feedback for learning (optional but recommended)
+chat_data = agent.get_last_interaction()  # Get interaction data
+result = agent.submit_feedback(
+    user_feedback="Payment processed successfully",
+    rating=5,
+    chat_data=chat_data  # Explicit for production/parallel users
+)
 ```
 
 ### Add Knowledge to Playbook
@@ -108,32 +116,40 @@ playbook.add_bullet(
 
 ### Learning from Feedback
 
+**Simple API (Recommended):**
+
 ```python
-from ace import Reflector, Curator
+# After agent response, provide feedback
+chat_data = agent.get_last_interaction()  # Get current interaction data
 
-# Initialize learning components
-reflector = Reflector(
-    model=config.chat_model,
-    storage_path=config.get_storage_path()
+result = agent.submit_feedback(
+    user_feedback="Payment processed successfully",
+    rating=5,  # 1-5 scale
+    feedback_type="positive",
+    chat_data=chat_data  # Explicit for thread-safety in production
 )
 
-curator = Curator(
-    playbook_manager=playbook,
-    storage_path=config.get_storage_path()
-)
+# ACE automatically:
+# 1. Reflector analyzes feedback → extracts insights
+# 2. Curator creates/updates playbook bullets
+# 3. Playbook improves for future interactions!
+```
 
-# Provide feedback
-feedback = {
-    "rating": "positive",
-    "comment": "Payment processed successfully"
+**For Async/Parallel Users:**
+
+```python
+# Use async API for better performance
+chat_data = {
+    "question": user_question,
+    "model_response": response.content,
+    "used_bullets": agent.get_used_bullets()
 }
 
-# Analyze and learn
-insight = reflector.analyze_feedback(chat_data, feedback)
-delta = curator.process_insights(insight, feedback_id)
-curator.merge_delta(delta)
-
-# Playbook automatically improves!
+result = await agent.asubmit_feedback(
+    user_feedback="Great response!",
+    rating=5,
+    chat_data=chat_data  # Required for thread-safety
+)
 ```
 
 ---
@@ -167,12 +183,12 @@ curator.merge_delta(delta)
 
 ### Components
 
-| Component | Purpose | Uses LLM? |
-|-----------|---------|-----------|
-| **ACEAgent** | Wraps your agent, injects context | No |
-| **PlaybookManager** | Stores & retrieves knowledge | No (embeddings only) |
-| **Reflector** | Analyzes feedback, extracts insights |  Yes |
-| **Curator** | Updates playbook deterministically |  No |
+| Component | Purpose | Uses LLM? | Key Features |
+|-----------|---------|-----------|-------------|
+| **ACEAgent** | Wraps your agent, injects context | No | Thread-safe with `chat_data` param, async support |
+| **PlaybookManager** | Stores & retrieves knowledge | No | Uses embeddings for semantic search |
+| **Reflector** | Analyzes feedback, extracts insights |  Yes | Multi-iteration refinement, auto-critique |
+| **Curator** | Updates playbook deterministically |  No | Uses embeddings for similarity matching (no LLM) |
 
 ---
 
@@ -184,13 +200,16 @@ from ace import ACEConfig
 config = ACEConfig(
     playbook_name="my_app",           # Unique name for your app
     vector_store="faiss",             # or "chromadb"
-    storage_path="./.ace/playbooks",  # Default: current directory
-    chat_model="openai:gpt-4o-mini",  # Any LangChain model
-    embedding_model="openai:text-embedding-3-small",
-    temperature=0.3,
+    storage_path="./.ace/playbooks",  # Optional: custom path
+    chat_model="openai:gpt-4o-mini",  # For Reflector (feedback analysis)
+    embedding_model="openai:text-embedding-3-small",  # For semantic search
+    temperature=0.3,                  # LLM temperature
     top_k=10,                         # Number of bullets to retrieve
-    deduplication_threshold=0.9       # Similarity threshold
+    deduplication_threshold=0.9       # Similarity threshold for deduplication
 )
+
+# Note: Curator does NOT use LLM - it's deterministic
+# Curator uses embeddings via PlaybookManager for similarity matching
 ```
 
 ### Storage Location
@@ -214,31 +233,8 @@ your-project/
 ##  Examples
 
 Check the [`examples/`](./examples/) directory for complete examples:
-
-- **[agent_with_create_agent.py](./examples/agent_with_create_agent.py)** - Using create_agent (LangChain 1.0) 
 - **[basic_usage.py](./examples/basic_usage.py)** - Wrap an agent with ACE (start here!)
 - **[with_feedback.py](./examples/with_feedback.py)** - Complete learning cycle
-- **[chromadb_usage.py](./examples/chromadb_usage.py)** - Using ChromaDB backend
-- **[custom_prompts.py](./examples/custom_prompts.py)** - Customize Reflector prompts
-- **[custom_top_k.py](./examples/custom_top_k.py)** - Configure top_k retrieval
-- **[env_setup.py](./examples/env_setup.py)** - Environment configuration
-- **[manual_control.py](./examples/manual_control.py)** - Fine-grained control
-
----
-
-##  Use Cases
-
-### 1. Customer Support Agents
-Learn optimal response patterns from customer feedback.
-
-### 2. Code Generation
-Accumulate best practices and common patterns.
-
-### 3. Data Analysis
-Build domain-specific analysis strategies.
-
-### 4. Task Automation
-Improve workflows based on execution results.
 
 ---
 
@@ -248,6 +244,12 @@ Improve workflows based on execution results.
 # Run all tests
 uv run pytest tests/ -v
 
+# Run simple learning test (5 questions with feedback)
+uv run pytest tests/test_simple_learning.py -v -s
+
+# Or run directly (requires OPENAI_API_KEY in .env)
+uv run python tests/test_simple_learning.py
+
 # Run specific test suite
 uv run pytest tests/test_e2e_learning.py -v -s
 
@@ -255,20 +257,7 @@ uv run pytest tests/test_e2e_learning.py -v -s
 uv run pytest tests/ --cov=ace --cov-report=html
 ```
 
-**All 31 tests passing** 
-
----
-
-##  Performance
-
-From the research paper (Stanford/SambaNova, 2025):
-
-| Metric | Improvement |
-|--------|-------------|
-| Task Performance | **+17.0%** |
-| Domain Adaptation | **+12.8%** |
-| Adaptation Speed | **82.3% faster** |
-| Computational Cost | **75.1% lower** |
+**All tests passing** ✓ 
 
 ---
 

@@ -21,11 +21,12 @@ class ReflectionInsight:
     """Structured insight extracted from feedback analysis.
     
     Attributes:
+        reasoning: Detailed analysis reasoning (per research paper)
         error_identification: What specifically went wrong
         root_cause_analysis: Why the error occurred
         correct_approach: What should have been done instead
         key_insight: Actionable strategy for the playbook
-        bullet_tags: Tags for bullets used (helpful/harmful)
+        bullet_tags: Tags for bullets used (helpful/harmful) - per research paper format
         confidence: Confidence score (0.0 to 1.0)
     """
     error_identification: str
@@ -34,6 +35,7 @@ class ReflectionInsight:
     key_insight: str
     bullet_tags: List[Dict[str, str]]
     confidence: float = 0.0
+    reasoning: str = ""  # Added per research paper - detailed analysis reasoning
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
@@ -199,6 +201,38 @@ class Reflector:
                 rating=rating
             )
         
+        # Populate bullet_tags based on feedback and used_bullets (per research paper)
+        # Validate and filter bullet_tags from LLM (may contain placeholder examples)
+        used_bullets = chat_data.get("used_bullets", [])
+        
+        # Check if bullet_tags are valid (contain real bullet IDs, not placeholder examples)
+        valid_bullet_tags = []
+        if reflection.bullet_tags:
+            for tag in reflection.bullet_tags:
+                bullet_id = tag.get("id", "")
+                # Filter out placeholder examples (e.g., "ctx-00123", "ctx-00456")
+                if bullet_id and bullet_id not in ["ctx-00123", "ctx-00456"] and bullet_id.startswith("ctx-"):
+                    # Validate bullet ID is actually in used_bullets
+                    if bullet_id in used_bullets:
+                        valid_bullet_tags.append(tag)
+        
+        # If no valid tags from LLM, generate them deterministically
+        if not valid_bullet_tags and used_bullets:
+            reflection.bullet_tags = self._generate_bullet_tags(
+                used_bullets=used_bullets,
+                rating=rating,
+                feedback_type=feedback_type,
+                is_positive=rating >= 4 or feedback_type in ["positive", "correct"],
+                is_negative=rating <= 2 or feedback_type in ["incorrect", "negative"]
+            )
+            print(f"    Generated {len(reflection.bullet_tags)} bullet tags (deterministic)")
+        elif valid_bullet_tags:
+            reflection.bullet_tags = valid_bullet_tags
+            print(f"    Using {len(valid_bullet_tags)} valid bullet tags from LLM")
+        elif reflection.bullet_tags:
+            print(f"    ⚠️  Filtered out {len(reflection.bullet_tags)} placeholder bullet tags")
+            reflection.bullet_tags = []
+        
         # Adjust confidence for auto-critique (more conservative)
         if is_auto_critique and reflection.confidence > 0.7:
             original_confidence = reflection.confidence
@@ -314,6 +348,7 @@ class Reflector:
             except json.JSONDecodeError:
                 # Fallback if JSON parsing fails
                 analysis = {
+                    "reasoning": "Unable to parse JSON response",
                     "error_identification": user_feedback,
                     "root_cause_analysis": "Unable to analyze automatically",
                     "correct_approach": "Review user feedback for guidance",
@@ -321,13 +356,14 @@ class Reflector:
                     "confidence": 0.5
                 }
             
-            # Create ReflectionInsight
+            # Create ReflectionInsight with reasoning field (per research paper)
             insight = ReflectionInsight(
+                reasoning=analysis.get("reasoning", ""),
                 error_identification=analysis.get("error_identification", user_feedback),
                 root_cause_analysis=analysis.get("root_cause_analysis", "Analysis failed"),
                 correct_approach=analysis.get("correct_approach", "Manual review needed"),
                 key_insight=analysis.get("key_insight", f"User feedback: {user_feedback}"),
-                bullet_tags=[],
+                bullet_tags=analysis.get("bullet_tags", []),  # Extract from LLM response if provided
                 confidence=analysis.get("confidence", 0.5)
             )
             
@@ -338,6 +374,7 @@ class Reflector:
             print(f" Error in reflection generation: {e}")
             # Return fallback insight
             return ReflectionInsight(
+                reasoning="Reflection generation failed",
                 error_identification=user_feedback,
                 root_cause_analysis="Reflection generation failed",
                 correct_approach="Manual review required",
@@ -384,6 +421,7 @@ Response: {model_response}
 Feedback: {user_feedback} ({feedback_type}, {rating}/5)
 
 CURRENT ANALYSIS:
+Reasoning: {current_reflection.reasoning}
 Error: {current_reflection.error_identification}
 Root Cause: {current_reflection.root_cause_analysis}
 Correct Approach: {current_reflection.correct_approach}
@@ -391,14 +429,16 @@ Key Insight: {current_reflection.key_insight}
 Confidence: {current_reflection.confidence}
 
 REFINEMENT INSTRUCTIONS:
-1. Make the error identification more specific
-2. Deepen the root cause analysis
-3. Make the correct approach more actionable
-4. Improve the key insight to be clearer and more reusable
-5. Adjust confidence based on clarity
+1. Enhance the reasoning with deeper analysis
+2. Make the error identification more specific
+3. Deepen the root cause analysis
+4. Make the correct approach more actionable
+5. Improve the key insight to be clearer and more reusable
+6. Adjust confidence based on clarity
 
 Provide refined JSON:
 {{
+    "reasoning": "enhanced detailed reasoning",
     "error_identification": "more specific error description",
     "root_cause_analysis": "deeper root cause analysis",
     "correct_approach": "more actionable approach",
@@ -429,11 +469,12 @@ Provide refined JSON:
                 
                 # Update reflection with refined analysis
                 current_reflection = ReflectionInsight(
+                    reasoning=analysis.get("reasoning", current_reflection.reasoning),
                     error_identification=analysis.get("error_identification", current_reflection.error_identification),
                     root_cause_analysis=analysis.get("root_cause_analysis", current_reflection.root_cause_analysis),
                     correct_approach=analysis.get("correct_approach", current_reflection.correct_approach),
                     key_insight=analysis.get("key_insight", current_reflection.key_insight),
-                    bullet_tags=current_reflection.bullet_tags,
+                    bullet_tags=current_reflection.bullet_tags,  # Preserve bullet_tags from initial reflection
                     confidence=analysis.get("confidence", current_reflection.confidence)
                 )
                 
@@ -445,6 +486,37 @@ Provide refined JSON:
                 break
         
         return current_reflection
+    
+    def _generate_bullet_tags(
+        self,
+        used_bullets: List[str],
+        rating: int,
+        feedback_type: str,
+        is_positive: bool,
+        is_negative: bool
+    ) -> List[Dict[str, str]]:
+        """Generate bullet_tags based on feedback (per research paper).
+        
+        Args:
+            used_bullets: List of bullet IDs that were used
+            rating: Rating from 1-5
+            feedback_type: Type of feedback
+            is_positive: Whether feedback is positive
+            is_negative: Whether feedback is negative
+            
+        Returns:
+            List of bullet tags in format [{"id": "ctx-00123", "tag": "helpful"}]
+        """
+        bullet_tags = []
+        
+        for bullet_id in used_bullets:
+            if is_positive:
+                bullet_tags.append({"id": bullet_id, "tag": "helpful"})
+            elif is_negative:
+                bullet_tags.append({"id": bullet_id, "tag": "harmful"})
+            # Neutral (rating 3) - don't add tag, bullet stays neutral
+        
+        return bullet_tags
     
     def _save_reflection(self, feedback_id: str, reflection: ReflectionInsight):
         """Save reflection to file.

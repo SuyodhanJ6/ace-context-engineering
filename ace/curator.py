@@ -198,16 +198,58 @@ class Curator:
                         content=operation.content,
                         section=operation.section or "General"
                     )
+                    
+                    # Apply counter increments for newly created bullet
+                    for _ in range(operation.helpful_increment):
+                        self.playbook.update_counters(bullet_id, helpful=True)
+                    for _ in range(operation.harmful_increment):
+                        self.playbook.update_counters(bullet_id, helpful=False)
+                    
+                    # Save updated playbook with counters
+                    self.playbook.save_playbook()
                     print(f"    Added new bullet: {bullet_id}")
+                    if operation.helpful_increment > 0 or operation.harmful_increment > 0:
+                        print(f"      Applied counters: +{operation.helpful_increment} helpful, +{operation.harmful_increment} harmful")
                     
                 elif operation.operation == "UPDATE":
-                    # Update existing bullet counters
+                    # Update existing bullet content and counters
                     if operation.bullet_id:
-                        for _ in range(operation.helpful_increment):
-                            self.playbook.update_counters(operation.bullet_id, helpful=True)
-                        for _ in range(operation.harmful_increment):
-                            self.playbook.update_counters(operation.bullet_id, helpful=False)
-                        print(f"    Updated bullet: {operation.bullet_id}")
+                        bullet = self.playbook.get_bullet(operation.bullet_id)
+                        if bullet:
+                            # Update content if provided (refines the bullet)
+                            if operation.content:
+                                # Update bullet content with refined version
+                                old_content = bullet.content
+                                bullet.content = operation.content
+                                bullet.updated_at = datetime.now()
+                                
+                                # Update embedding for the new content (delete old + add new)
+                                embedding = self.playbook._get_embedding(operation.content)
+                                # Remove old embedding
+                                self.playbook.vector_store.delete([operation.bullet_id])
+                                # Add new embedding
+                                self.playbook.vector_store.add_embeddings(
+                                    texts=[operation.content],
+                                    embeddings=embedding.reshape(1, -1),
+                                    ids=[operation.bullet_id]
+                                )
+                                self.playbook.vector_store.save()
+                                
+                                print(f"    Refined bullet content: {operation.bullet_id}")
+                                print(f"      Old: {old_content[:60]}...")
+                                print(f"      New: {operation.content[:60]}...")
+                            
+                            # Update counters
+                            for _ in range(operation.helpful_increment):
+                                self.playbook.update_counters(operation.bullet_id, helpful=True)
+                            for _ in range(operation.harmful_increment):
+                                self.playbook.update_counters(operation.bullet_id, helpful=False)
+                            
+                            # Save updated playbook
+                            self.playbook.save_playbook()
+                            print(f"    Updated bullet: {operation.bullet_id}")
+                        else:
+                            print(f"Bullet not found: {operation.bullet_id}")
             
             # Save delta log
             self._save_delta_log(delta)
@@ -323,25 +365,25 @@ class Curator:
     def _format_bullet_content(self, insight: ReflectionInsight) -> str:
         """Format bullet content from insight.
         
+        Per research paper: Use key_insight directly as bullet content
+        (it's designed specifically for the playbook).
+        
         Args:
             insight: Reflection insight
             
         Returns:
             Formatted content string
         """
-        # Clean and format content
-        if insight.error_identification and "no error" not in insight.error_identification.lower():
-            # Error case - create actionable "avoid" guidance
-            formatted = f"When {insight.error_identification.lower()}, avoid this approach and instead: {insight.correct_approach}"
-        else:
-            # Success case - create actionable "use this" guidance
-            formatted = f"When answering similar questions, use this approach: {insight.correct_approach}"
+        # Use key_insight directly as bullet content (per research paper)
+        # The key_insight is designed specifically for playbook use
+        formatted = insight.key_insight.strip()
         
-        # Apply structured formatting
+        # Apply structured formatting (numbering, etc.)
         formatted = self._apply_structured_formatting(formatted)
         
-        # Ensure actionable content
+        # Ensure actionable content - fallback if key_insight is empty/invalid
         if not formatted or len(formatted) < 10:
+            # Fallback: construct from other fields
             formatted = self._create_fallback_insight(insight)
         
         return formatted

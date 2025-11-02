@@ -231,6 +231,7 @@ class ACEAgent:
         user_feedback: str,
         rating: int,
         feedback_type: str = "user_feedback",
+        chat_data: Optional[Dict[str, Any]] = None,
         reflector: Optional[Any] = None,
         curator: Optional[Any] = None
     ) -> Dict[str, Any]:
@@ -240,13 +241,19 @@ class ACEAgent:
             user_feedback: User's feedback text
             rating: Rating from 1-5
             feedback_type: Type of feedback (default: "user_feedback")
+            chat_data: Optional chat data dict with 'question', 'model_response', 'used_bullets'.
+                      If not provided, uses internal last_interaction (convenience for single-user).
+                      Recommended to provide explicitly for production/async/parallel users.
             reflector: Reflector instance (optional, creates one if None)
             curator: Curator instance (optional, creates one if None)
             
         Returns:
             Dictionary with processing results
         """
-        if not self.last_interaction:
+        # Use provided chat_data or fall back to last_interaction
+        interaction_data = chat_data if chat_data is not None else self.last_interaction
+        
+        if not interaction_data:
             print("  No interaction to provide feedback for")
             return {"success": False, "message": "No interaction found"}
         
@@ -266,7 +273,7 @@ class ACEAgent:
             feedback_type=feedback_type,
             user_feedback=user_feedback,
             rating=rating,
-            feedback_id=f"feedback_{id(self.last_interaction)}"
+            feedback_id=f"feedback_{id(interaction_data)}"
         )
         
         # Initialize Reflector and Curator if not provided
@@ -274,17 +281,23 @@ class ACEAgent:
             from ace.reflector import Reflector
             from ace.config import ACEConfig
             config = self.config or ACEConfig()
-            reflector = Reflector(model=config.chat_model)
+            reflector = Reflector(
+                model=config.chat_model,
+                storage_path=config.get_storage_path()
+            )
         
         if curator is None:
             from ace.curator import Curator
-            curator = Curator(playbook_manager=self.playbook)
+            curator = Curator(
+                playbook_manager=self.playbook,
+                storage_path=self.config.get_storage_path() if self.config else None
+            )
         
         # Run ACE pipeline
         try:
             # 1. Reflector analyzes feedback
             insight = reflector.analyze_feedback(
-                chat_data=self.last_interaction,
+                chat_data=interaction_data,
                 feedback_data=feedback_data
             )
             
@@ -299,14 +312,163 @@ class ACEAgent:
                 print("     No updates created (low confidence)")
             
             # 4. Update bullet counters
-            is_positive = rating >= 4 or feedback_type == "positive"
-            is_negative = rating <= 2 or feedback_type == "incorrect"
+            # Use bullet_tags from Reflector if available, otherwise fall back to rating
+            used_bullets = interaction_data.get("used_bullets", [])
             
-            for bullet_id in self.last_interaction.get("used_bullets", []):
-                if is_positive:
-                    self.playbook.update_counters(bullet_id, helpful=True)
-                elif is_negative:
-                    self.playbook.update_counters(bullet_id, helpful=False)
+            if insight.bullet_tags:
+                # Use Reflector's bullet_tags (per research paper)
+                for bullet_tag in insight.bullet_tags:
+                    bullet_id = bullet_tag.get("id")
+                    tag = bullet_tag.get("tag", "").lower()
+                    if bullet_id and tag == "helpful":
+                        self.playbook.update_counters(bullet_id, helpful=True)
+                    elif bullet_id and tag == "harmful":
+                        self.playbook.update_counters(bullet_id, helpful=False)
+            else:
+                # Fallback: use rating directly (legacy behavior)
+                is_positive = rating >= 4 or feedback_type == "positive"
+                is_negative = rating <= 2 or feedback_type == "incorrect"
+                for bullet_id in used_bullets:
+                    if is_positive:
+                        self.playbook.update_counters(bullet_id, helpful=True)
+                    elif is_negative:
+                        self.playbook.update_counters(bullet_id, helpful=False)
+            
+            print(f" Feedback processed successfully")
+            
+            return {
+                "success": success,
+                "insight": insight,
+                "operations": delta.total_operations,
+                "confidence": insight.confidence
+            }
+            
+        except Exception as e:
+            print(f" Error processing feedback: {e}")
+            return {"success": False, "error": str(e)}
+    
+    async def asubmit_feedback(
+        self,
+        user_feedback: str,
+        rating: int,
+        feedback_type: str = "user_feedback",
+        chat_data: Optional[Dict[str, Any]] = None,
+        reflector: Optional[Any] = None,
+        curator: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """Async submit user feedback and trigger ACE pipeline.
+        
+        Args:
+            user_feedback: User's feedback text
+            rating: Rating from 1-5
+            feedback_type: Type of feedback (default: "user_feedback")
+            chat_data: Optional chat data dict with 'question', 'model_response', 'used_bullets'.
+                      If not provided, uses internal last_interaction.
+                      Recommended to provide explicitly for production/async/parallel users.
+            reflector: Reflector instance (optional, creates one if None)
+            curator: Curator instance (optional, creates one if None)
+            
+        Returns:
+            Dictionary with processing results
+            
+        Example:
+            >>> # In async context (FastAPI, etc.)
+            >>> result = await agent.asubmit_feedback(
+            ...     user_feedback="Great response!",
+            ...     rating=5,
+            ...     chat_data={"question": "...", "model_response": "...", "used_bullets": [...]}
+            ... )
+        """
+        # Use provided chat_data or fall back to last_interaction
+        interaction_data = chat_data if chat_data is not None else self.last_interaction
+        
+        if not interaction_data:
+            print("  No interaction to provide feedback for")
+            return {"success": False, "message": "No interaction found"}
+        
+        print(f" Processing user feedback (async)...")
+        print(f"   Rating: {rating}/5")
+        print(f"   Type: {feedback_type}")
+        
+        # Create feedback data object
+        class FeedbackData:
+            def __init__(self, feedback_type, user_feedback, rating, feedback_id):
+                self.feedback_type = feedback_type
+                self.user_feedback = user_feedback
+                self.rating = rating
+                self.feedback_id = feedback_id
+        
+        feedback_data = FeedbackData(
+            feedback_type=feedback_type,
+            user_feedback=user_feedback,
+            rating=rating,
+            feedback_id=f"feedback_{id(interaction_data)}"
+        )
+        
+        # Initialize Reflector and Curator if not provided
+        if reflector is None:
+            from ace.reflector import Reflector
+            from ace.config import ACEConfig
+            config = self.config or ACEConfig()
+            reflector = Reflector(
+                model=config.chat_model,
+                storage_path=config.get_storage_path()
+            )
+        
+        if curator is None:
+            from ace.curator import Curator
+            curator = Curator(
+                playbook_manager=self.playbook,
+                storage_path=self.config.get_storage_path() if self.config else None
+            )
+        
+        # Run ACE pipeline (async)
+        try:
+            # 1. Reflector analyzes feedback (check if it has async method)
+            if hasattr(reflector.model, 'ainvoke'):
+                # Use async invoke if available
+                insight = await reflector.analyze_feedback(
+                    chat_data=interaction_data,
+                    feedback_data=feedback_data
+                )
+            else:
+                # Fall back to sync
+                insight = reflector.analyze_feedback(
+                    chat_data=interaction_data,
+                    feedback_data=feedback_data
+                )
+            
+            # 2. Curator creates delta (deterministic, no async needed)
+            delta = curator.process_insights(insight, feedback_data.feedback_id)
+            
+            # 3. Apply updates (deterministic, no async needed)
+            if delta.total_operations > 0:
+                success = curator.merge_delta(delta)
+            else:
+                success = True
+                print("     No updates created (low confidence)")
+            
+            # 4. Update bullet counters
+            used_bullets = interaction_data.get("used_bullets", [])
+            
+            if insight.bullet_tags:
+                # Use Reflector's bullet_tags (per research paper)
+                for bullet_tag in insight.bullet_tags:
+                    bullet_id = bullet_tag.get("id")
+                    tag = bullet_tag.get("tag", "").lower()
+                    if bullet_id and tag == "helpful":
+                        self.playbook.update_counters(bullet_id, helpful=True)
+                    elif bullet_id and tag == "harmful":
+                        self.playbook.update_counters(bullet_id, helpful=False)
+            else:
+                # Fallback: use rating directly (legacy behavior)
+                is_positive = rating >= 4 or feedback_type == "positive"
+                is_negative = rating <= 2 or feedback_type == "incorrect"
+                for bullet_id in used_bullets:
+                    if is_positive:
+                        self.playbook.update_counters(bullet_id, helpful=True)
+                    elif is_negative:
+                        self.playbook.update_counters(bullet_id, helpful=False)
             
             print(f" Feedback processed successfully")
             

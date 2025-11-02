@@ -37,12 +37,20 @@ IMPORTANT: The key_insight should be a CLEAR, ACTIONABLE strategy in this format
 
 Output your analysis as JSON with these exact fields:
 {{
+    "reasoning": "Detailed analysis reasoning explaining the overall evaluation",
     "error_identification": "Specific description of what was wrong",
     "root_cause_analysis": "Why this mistake happened",
     "correct_approach": "What should have been done",
     "key_insight": "Clear, actionable strategy for the playbook (human-readable, not technical data)",
+    "bullet_tags": [
+        {{"id": "ctx-00123", "tag": "helpful"}},
+        {{"id": "ctx-00456", "tag": "harmful"}}
+    ],
     "confidence": 0.8
 }}
+
+IMPORTANT: Include bullet_tags array if you can identify which playbook bullets were helpful/harmful.
+If not provided, tags will be generated automatically based on feedback rating.
 
 Be specific and actionable. The key_insight should be a concrete, human-readable strategy that can be added to a playbook."""
     

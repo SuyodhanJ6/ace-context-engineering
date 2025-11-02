@@ -6,11 +6,11 @@ from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass
 import logging
 
-from .core.generator import Generator
-from .core.reflector import Reflector  
-from .core.curator import Curator
-from .playbook.manager import PlaybookManager
-from .config import ModelConfig, ACEConfig
+from ace.core.generator import Generator
+from ace.reflector import Reflector
+from ace.curator import Curator
+from ace.playbook.manager import PlaybookManager
+from ace.config import ModelConfig, ACEConfig
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,6 @@ class ACEFramework:
         self,
         generator_model: Optional[str] = None,
         reflector_model: Optional[str] = None,
-        curator_model: Optional[str] = None,
         config: Optional[ACEConfig] = None,
         **kwargs
     ):
@@ -46,31 +45,42 @@ class ACEFramework:
         
         Args:
             generator_model: Model for the Generator agent
-            reflector_model: Model for the Reflector agent  
-            curator_model: Model for the Curator agent
+            reflector_model: Model for the Reflector agent
             config: ACE configuration object
             **kwargs: Additional configuration parameters
+            
+        Note: Curator does not use LLM (deterministic per research paper).
         """
         self.config = config or ACEConfig()
         
+        # Initialize playbook manager first (needed for Curator)
+        self.playbook_manager = PlaybookManager(
+            playbook_dir=self.config.get_storage_path(),
+            vector_store=self.config.vector_store,
+            embedding_model=self.config.embedding_model
+        )
+        
         # Initialize core components
+        # Generator: Uses LLM for task execution
+        generator_model_name = generator_model or self.config.chat_model
         self.generator = Generator(
-            model=generator_model or self.config.generator_model,
-            temperature=self.config.generator_temperature
+            model=generator_model_name,
+            temperature=self.config.temperature
         )
         
+        # Reflector: Uses LLM for feedback analysis
+        reflector_model_name = reflector_model or self.config.chat_model
         self.reflector = Reflector(
-            model=reflector_model or self.config.reflector_model,
-            temperature=self.config.reflector_temperature
+            model=reflector_model_name,
+            storage_path=self.config.get_storage_path(),
+            temperature=self.config.temperature
         )
         
+        # Curator: Deterministic, no LLM (per research paper)
         self.curator = Curator(
-            model=curator_model or self.config.curator_model,
-            temperature=self.config.curator_temperature
+            playbook_manager=self.playbook_manager,
+            storage_path=self.config.get_storage_path()
         )
-        
-        # Initialize playbook manager
-        self.playbook_manager = PlaybookManager()
         
         logger.info("ACE Framework initialized successfully")
     
