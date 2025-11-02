@@ -11,7 +11,7 @@ Authors: Qizheng Zhang, Changran Hu, et al.
 GitHub: https://github.com/SuyodhanJ6/ace-context-engineering
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.2"
 __author__ = "Suyodhan J"
 __email__ = "suyodhanj6@gmail.com"
 
