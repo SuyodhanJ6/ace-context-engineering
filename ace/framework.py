@@ -57,7 +57,9 @@ class ACEFramework:
         self.playbook_manager = PlaybookManager(
             playbook_dir=self.config.get_storage_path(),
             vector_store=self.config.vector_store,
-            embedding_model=self.config.embedding_model
+            embedding_model=self.config.embedding_model,
+            qdrant_url=self.config.qdrant_url if self.config.vector_store in ["qdrant", "qdrant-cloud"] else None,
+            qdrant_api_key=self.config.qdrant_api_key if self.config.vector_store == "qdrant-cloud" else None
         )
         
         # Initialize core components

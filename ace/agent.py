@@ -35,7 +35,9 @@ class ACEAgent:
         >>> playbook = PlaybookManager(
         ...     playbook_dir=config.get_storage_path(),
         ...     vector_store=config.vector_store,
-        ...     embedding_model=config.embedding_model
+        ...     embedding_model=config.embedding_model,
+        ...     qdrant_url=config.qdrant_url if config.vector_store in ["qdrant", "qdrant-cloud"] else None,
+        ...     qdrant_api_key=config.qdrant_api_key if config.vector_store == "qdrant-cloud" else None
         ... )
         >>> 
         >>> # Your agent
