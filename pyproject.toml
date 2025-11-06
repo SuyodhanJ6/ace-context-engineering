@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ace-context-engineering"
-version = "0.1.3"
+version = "0.1.4"
 description = "Agentic Context Engineering (ACE) - Evolving contexts for self-improving language models"
 readme = "README.md"
 license = {file = "LICENSE"}
