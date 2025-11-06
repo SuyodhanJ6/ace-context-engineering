@@ -12,47 +12,78 @@ class ReflectorPrompts:
     
     DEFAULT_SYSTEM_PROMPT = """You are an expert at analyzing AI model failures and extracting actionable insights for improvement."""
     
-    DEFAULT_ANALYSIS_TEMPLATE = """Analyze why this response received feedback and extract actionable insights.
+    DEFAULT_ANALYSIS_TEMPLATE = """You are a senior reviewer diagnosing the generator's trajectory.
+Use the playbook, model response, and feedback to identify mistakes and actionable insights.
+Even if model reasoning is not available, analyze the response itself to determine what went wrong and what the correct approach should be.
+Output must be a single valid JSON object. Do NOT include analysis text or explanations outside the JSON.
+Begin the response with `{{` and end with `}}`.
 
-QUESTION: {question}
+Question:
+{question}
 
-MODEL RESPONSE: {model_response}
+{model_reasoning_section}
 
-USER FEEDBACK: {user_feedback}
-FEEDBACK TYPE: {feedback_type}
-RATING: {rating}/5
+Model response:
+{model_response}
 
-Based on the user's feedback, analyze and provide:
+{ground_truth_section}
+
+Feedback:
+{feedback}
+
+{feedback_type_section}
+Rating: {rating}/5
+
+Playbook excerpts consulted:
+{playbook_excerpts}
+
+Analyze and provide:
 
 1. ERROR IDENTIFICATION: What specifically was wrong or missing in the response?
+   - Analyze the model response itself if reasoning is not available
+   - Compare with feedback to identify specific issues
+   - Identify what mistake was made
+
 2. ROOT CAUSE ANALYSIS: Why did the model make this mistake? What was the underlying issue?
+   - Infer the root cause from the response and feedback
+   - Consider if playbook bullets were misapplied or missing
+
 3. CORRECT APPROACH: What should have been done instead?
+   - Provide the correct methodology or steps
+   - This is what we want to add to the playbook
+
 4. KEY INSIGHT: What actionable strategy should be added to the playbook to prevent this in future?
+   - This should be a clear, reusable strategy
+   - Format as actionable guidance
 
 IMPORTANT: The key_insight should be a CLEAR, ACTIONABLE strategy in this format:
 - For SUCCESS patterns: "When answering [question type], use this approach: [specific steps]"
-- For ERROR patterns: "When [situation], avoid [mistake] and instead [correct approach]"
+- For ERROR patterns: MUST include BOTH the mistake AND correct approach:
+  * Format: "When [situation], avoid [mistake] and instead [correct approach]"
+  * Or: "Never [mistake]. Instead, [correct approach]"
+  * Or numbered format: "1. Avoid [mistake], 2. Instead do [correct approach]"
 - Use numbered lists for multiple steps: "1. First step, 2. Second step, 3. Third step"
 - Be specific and practical, NOT technical object data
+- ALWAYS include what NOT to do (mistake) AND what TO do (correct approach) for error patterns
 
-Output your analysis as JSON with these exact fields:
+Return JSON:
 {{
-    "reasoning": "Detailed analysis reasoning explaining the overall evaluation",
-    "error_identification": "Specific description of what was wrong",
-    "root_cause_analysis": "Why this mistake happened",
-    "correct_approach": "What should have been done",
-    "key_insight": "Clear, actionable strategy for the playbook (human-readable, not technical data)",
+    "reasoning": "<detailed analysis reasoning explaining the overall evaluation>",
+    "error_identification": "<what went wrong - analyze response and feedback>",
+    "root_cause_analysis": "<why it happened - infer from response and feedback>",
+    "correct_approach": "<what should be done - the correct method>",
+    "key_insight": "<reusable takeaway - clear, actionable strategy for the playbook>",
     "bullet_tags": [
-        {{"id": "ctx-00123", "tag": "helpful"}},
-        {{"id": "ctx-00456", "tag": "harmful"}}
+        {{"id": "<bullet-id>", "tag": "helpful|harmful|neutral"}}
     ],
     "confidence": 0.8
 }}
 
-IMPORTANT: Include bullet_tags array if you can identify which playbook bullets were helpful/harmful.
-If not provided, tags will be generated automatically based on feedback rating.
-
-Be specific and actionable. The key_insight should be a concrete, human-readable strategy that can be added to a playbook."""
+IMPORTANT: 
+- Include bullet_tags array if you can identify which playbook bullets were helpful/harmful
+- If bullet_tags not provided, tags will be generated automatically based on feedback rating
+- Be specific and actionable. The key_insight should be a concrete, human-readable strategy that can be added to a playbook
+- Even without model reasoning, you can analyze the response itself to identify mistakes and correct approaches"""
     
     @classmethod
     def format_analysis_prompt(
@@ -62,6 +93,9 @@ Be specific and actionable. The key_insight should be a concrete, human-readable
         user_feedback: str,
         feedback_type: str,
         rating: int,
+        model_reasoning: str = "",
+        ground_truth: str = "",
+        playbook_excerpts: str = "",
         custom_template: str = None
     ) -> str:
         """Format the analysis prompt with given data.
@@ -72,6 +106,9 @@ Be specific and actionable. The key_insight should be a concrete, human-readable
             user_feedback: User feedback text
             feedback_type: Type of feedback
             rating: Rating score (1-5)
+            model_reasoning: Model's reasoning/chain of thought (optional)
+            ground_truth: Ground truth answer (optional)
+            playbook_excerpts: Playbook bullets that were used (optional)
             custom_template: Optional custom template (uses DEFAULT_ANALYSIS_TEMPLATE if None)
             
         Returns:
@@ -79,12 +116,37 @@ Be specific and actionable. The key_insight should be a concrete, human-readable
         """
         template = custom_template or cls.DEFAULT_ANALYSIS_TEMPLATE
         
+        # Format playbook excerpts if provided
+        if not playbook_excerpts:
+            playbook_excerpts = "No playbook bullets were used in this interaction."
+        
+        # Format model reasoning section (only include if available)
+        if model_reasoning and model_reasoning.strip() and "Not available" not in model_reasoning:
+            model_reasoning_section = f"Model reasoning:\n{model_reasoning}"
+        else:
+            model_reasoning_section = ""
+        
+        # Format ground truth section (only include if available)
+        if ground_truth and ground_truth.strip() and "Not available" not in ground_truth:
+            ground_truth_section = f"Ground truth (if available):\n{ground_truth}"
+        else:
+            ground_truth_section = ""
+        
+        # Format feedback type section (only include if provided and not empty)
+        if feedback_type and feedback_type.strip() and feedback_type != "user_feedback":
+            feedback_type_section = f"Feedback type: {feedback_type}"
+        else:
+            feedback_type_section = ""
+        
         return template.format(
             question=question,
+            model_reasoning_section=model_reasoning_section,
             model_response=model_response,
-            user_feedback=user_feedback,
-            feedback_type=feedback_type,
-            rating=rating
+            ground_truth_section=ground_truth_section,
+            feedback=user_feedback,
+            feedback_type_section=feedback_type_section,
+            rating=rating,
+            playbook_excerpts=playbook_excerpts
         )
     
     @classmethod
