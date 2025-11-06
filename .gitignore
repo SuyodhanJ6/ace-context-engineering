@@ -142,6 +142,9 @@ logs/
 temp/
 cache/
 
+# Qdrant local storage (Docker runtime data)
+qdrant_storage/
+
 # IDE
 .vscode/
 .idea/
