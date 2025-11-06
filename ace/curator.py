@@ -349,24 +349,61 @@ class Curator:
     ) -> List[Bullet]:
         """Find bullets similar to the given content.
         
+        Checks actual similarity scores and only returns bullets above threshold.
+        This ensures we UPDATE only when truly similar, otherwise ADD new bullet.
+        
         Args:
             content: Content to match
-            threshold: Similarity threshold
+            threshold: Similarity threshold (default: 0.8)
             
         Returns:
-            List of similar bullets
+            List of similar bullets (only those with similarity >= threshold)
         """
-        # Use playbook's retrieve_relevant to find similar bullets
-        relevant_bullets = self.playbook.retrieve_relevant(content, top_k=5)
+        if not self.playbook.bullets:
+            return []
         
-        # Return top matches (playbook already filters by quality)
-        return relevant_bullets[:3]
+        # Get embedding for the content
+        query_embedding = self.playbook._get_embedding(content)
+        
+        # Search vector store to get scores
+        scores, indices = self.playbook.vector_store.search(
+            query_embedding=query_embedding,
+            top_k=min(10, len(self.playbook.bullets))
+        )
+        
+        # Filter by threshold and quality
+        similar_bullets = []
+        for score, idx in zip(scores, indices):
+            # Check similarity threshold
+            if score < threshold:
+                if len(similar_bullets) == 0:  # Log first non-similar result for debugging
+                    print(f"   Top match similarity: {score:.3f} (below threshold {threshold})")
+                continue  # Not similar enough
+            
+            # Check index validity
+            if 0 <= idx < len(self.playbook.bullets):
+                bullet = self.playbook.bullets[idx]
+                # Only include bullets that are more helpful than harmful
+                if bullet.helpful_count >= bullet.harmful_count:
+                    similar_bullets.append(bullet)
+                    if len(similar_bullets) == 1:  # Log first similar match
+                        print(f"   Found similar bullet: {bullet.id} (similarity: {score:.3f})")
+        
+        if not similar_bullets and scores:
+            # Log that no similar bullets found
+            max_score = max(scores) if scores else 0
+            print(f"   No similar bullets found (max similarity: {max_score:.3f} < threshold {threshold})")
+        
+        # Return top 3 similar bullets (sorted by score, highest first)
+        # Note: scores are already in descending order from vector store
+        return similar_bullets[:3]
     
     def _format_bullet_content(self, insight: ReflectionInsight) -> str:
         """Format bullet content from insight.
         
-        Per research paper: Use key_insight directly as bullet content
-        (it's designed specifically for the playbook).
+        Per research paper: Bullets should include both mistake and correct approach
+        for error patterns. Use key_insight directly (it's designed for playbook),
+        but enhance it if it doesn't include both mistake and correct approach.
         
         Args:
             insight: Reflection insight
@@ -378,12 +415,29 @@ class Curator:
         # The key_insight is designed specifically for playbook use
         formatted = insight.key_insight.strip()
         
+        # Check if key_insight includes both mistake and correct approach for error patterns
+        # Per paper: Error pattern bullets should include "avoid X" and "instead Y"
+        if (insight.error_identification and 
+            "no error" not in insight.error_identification.lower() and
+            insight.correct_approach):
+            # Check if key_insight already includes both
+            has_avoid = any(word in formatted.lower() for word in ["avoid", "never", "don't", "do not"])
+            has_instead = any(word in formatted.lower() for word in ["instead", "rather", "use", "do"])
+            
+            # If key_insight doesn't include both, enhance it
+            if not (has_avoid and has_instead):
+                # Try to enhance: prepend mistake info if missing
+                if not has_avoid and insight.error_identification:
+                    mistake_short = insight.error_identification.strip()
+                    if len(mistake_short) < 100:  # Only if concise
+                        formatted = f"Avoid {mistake_short}. {formatted}"
+        
         # Apply structured formatting (numbering, etc.)
         formatted = self._apply_structured_formatting(formatted)
         
         # Ensure actionable content - fallback if key_insight is empty/invalid
         if not formatted or len(formatted) < 10:
-            # Fallback: construct from other fields
+            # Fallback: construct from other fields (includes both mistake and correct approach)
             formatted = self._create_fallback_insight(insight)
         
         return formatted
@@ -412,6 +466,10 @@ class Curator:
     def _create_fallback_insight(self, insight: ReflectionInsight) -> str:
         """Create fallback insight content.
         
+        Per research paper: Bullets should include both mistake and correct approach
+        for error patterns (e.g., "Never rely on transaction descriptions. 
+        Instead, use Phone API search_contacts()").
+        
         Args:
             insight: Reflection insight
             
@@ -419,9 +477,18 @@ class Curator:
             Fallback content string
         """
         if insight.error_identification and "no error" not in insight.error_identification.lower():
-            return f"When {insight.error_identification.lower()}, use this approach: {insight.correct_approach}"
+            # Per paper: Include both mistake and correct approach
+            mistake = insight.error_identification.strip()
+            correct = insight.correct_approach.strip() if insight.correct_approach else ""
+            
+            if correct:
+                # Format: "Avoid [mistake]. Instead, [correct approach]"
+                return f"Avoid {mistake}. Instead, {correct}"
+            else:
+                return f"When {mistake.lower()}, use the correct approach"
         else:
-            return f"Success pattern: {insight.correct_approach}"
+            # Success pattern - just include the correct approach
+            return f"Success pattern: {insight.correct_approach}" if insight.correct_approach else "Success pattern identified"
     
     def _determine_section(self, insight: ReflectionInsight) -> str:
         """Determine appropriate section for the insight.
