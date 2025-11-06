@@ -32,6 +32,10 @@ pip install ace-context-engineering
 
 # With ChromaDB support
 pip install ace-context-engineering[chromadb]
+
+# With Qdrant support
+pip install ace-context-engineering[qdrant]
+# or: pip install qdrant-client
 ```
 
 ### Using uv (Recommended)
@@ -41,6 +45,10 @@ uv add ace-context-engineering
 
 # With ChromaDB support
 uv add ace-context-engineering[chromadb]
+
+# With Qdrant support
+uv add ace-context-engineering[qdrant]
+# or: uv add qdrant-client
 ```
 
 **Environment Setup:**
@@ -199,13 +207,16 @@ from ace import ACEConfig
 
 config = ACEConfig(
     playbook_name="my_app",           # Unique name for your app
-    vector_store="faiss",             # or "chromadb"
+    vector_store="faiss",             # "faiss", "chromadb", "qdrant", or "qdrant-cloud"
     storage_path="./.ace/playbooks",  # Optional: custom path
     chat_model="openai:gpt-4o-mini",  # For Reflector (feedback analysis)
     embedding_model="openai:text-embedding-3-small",  # For semantic search
     temperature=0.3,                  # LLM temperature
     top_k=10,                         # Number of bullets to retrieve
-    deduplication_threshold=0.9       # Similarity threshold for deduplication
+    deduplication_threshold=0.9,      # Similarity threshold for deduplication
+    # Qdrant-specific (only needed for qdrant/qdrant-cloud)
+    qdrant_url="http://localhost:6333",  # Qdrant server URL
+    qdrant_api_key=None               # Required for qdrant-cloud, optional for qdrant
 )
 
 # Note: Curator does NOT use LLM - it's deterministic
@@ -214,6 +225,7 @@ config = ACEConfig(
 
 ### Storage Location
 
+**FAISS/ChromaDB (Local Storage):**
 By default, ACE stores playbooks in `./.ace/playbooks/{playbook_name}/` (like `.venv`):
 
 ```
@@ -222,11 +234,32 @@ your-project/
  .ace/               ← ACE storage
     playbooks/
         my_app/
-            faiss_index.bin
+            faiss_index.bin  (or chromadb/)
             metadata.json
             playbook.md
  your_code.py
 ```
+
+**Qdrant (External Vector Storage):**
+With Qdrant, playbook metadata stays local, but vectors are stored externally:
+
+```
+your-project/
+ .ace/
+    playbooks/
+        my_app/
+            metadata.json      ← Local (bullet content, counters)
+            playbook.md        ← Local
+            # NO vector files   ← Vectors stored in Qdrant server
+
+Qdrant Server (Docker/Cloud):
+    Collection: my_app
+        └── Vectors (embeddings) ← External
+```
+
+**Qdrant Setup:**
+- **Local (Docker):** `docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant`
+- **Cloud:** Get URL and API key from [Qdrant Cloud](https://cloud.qdrant.io/)
 
 ---
 
@@ -235,6 +268,8 @@ your-project/
 Check the [`examples/`](./examples/) directory for complete examples:
 - **[basic_usage.py](./examples/basic_usage.py)** - Wrap an agent with ACE (start here!)
 - **[with_feedback.py](./examples/with_feedback.py)** - Complete learning cycle
+- **[chromadb_usage.py](./examples/chromadb_usage.py)** - Using ChromaDB vector store
+- **[qdrant_usage.py](./examples/qdrant_usage.py)** - Using Qdrant (local Docker or Cloud)
 
 ---
 
@@ -290,7 +325,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ##  Acknowledgments
 
 - **Research Paper:** [Agentic Context Engineering](http://arxiv.org/pdf/2510.04618) by Zhang et al. (Stanford/SambaNova, 2025)
-- **Built with:** [LangChain](https://python.langchain.com/), [FAISS](https://github.com/facebookresearch/faiss), [ChromaDB](https://www.trychroma.com/)
+- **Built with:** [LangChain](https://python.langchain.com/), [FAISS](https://github.com/facebookresearch/faiss), [ChromaDB](https://www.trychroma.com/), [Qdrant](https://qdrant.tech/)
 
 ---
 
