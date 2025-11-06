@@ -12,3 +12,10 @@ try:
 except ImportError:
     ChromaDBVectorStore = None
 
+# Qdrant is optional dependency
+try:
+    from ace.vectorstores.qdrant import QdrantVectorStore
+    __all__.append("QdrantVectorStore")
+except ImportError:
+    QdrantVectorStore = None
+

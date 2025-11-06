@@ -65,3 +65,10 @@ try:
     __all__.append("ChromaDBVectorStore")
 except ImportError:
     pass
+
+# Conditionally export Qdrant if available
+try:
+    from ace.vectorstores.qdrant import QdrantVectorStore
+    __all__.append("QdrantVectorStore")
+except ImportError:
+    pass
