@@ -44,9 +44,20 @@ class PlaybookManager:
         playbook_dir: Optional[str] = None,
         vector_store: str = "faiss",
         embedding_model: str = "openai:text-embedding-3-small",
-        embedding_dim: int = 1536
+        embedding_dim: int = 1536,
+        qdrant_url: Optional[str] = None,
+        qdrant_api_key: Optional[str] = None
     ):
-        """Initialize PlaybookManager with vector store and embeddings."""
+        """Initialize PlaybookManager with vector store and embeddings.
+        
+        Args:
+            playbook_dir: Directory for storing playbook data
+            vector_store: Type of vector store ("faiss", "chromadb", "qdrant", or "qdrant-cloud")
+            embedding_model: Model name for embeddings (LangChain format)
+            embedding_dim: Dimension of embeddings (default: 1536)
+            qdrant_url: Qdrant server URL (required for qdrant/qdrant-cloud)
+            qdrant_api_key: Qdrant API key (required for qdrant-cloud, optional for qdrant)
+        """
         # Set up storage path
         if playbook_dir is None:
             playbook_dir = str(Path.home() / ".ace" / "playbooks" / "default")
@@ -78,8 +89,43 @@ class PlaybookManager:
                 raise ImportError(
                     "ChromaDB is not installed. Install with: pip install chromadb"
                 )
+        elif vector_store in ["qdrant", "qdrant-cloud"]:
+            # Qdrant is optional dependency
+            try:
+                from ace.vectorstores.qdrant import QdrantVectorStore
+                
+                # Extract collection name from playbook directory
+                collection_name = self._extract_collection_name()
+                
+                # Get Qdrant URL (use provided or default)
+                qdrant_url_value = qdrant_url or "http://localhost:6333"
+                
+                # For qdrant-cloud, API key is required
+                if vector_store == "qdrant-cloud" and not qdrant_api_key:
+                    raise ValueError(
+                        "qdrant_api_key is required for 'qdrant-cloud'. "
+                        "Provide it or set QDRANT_API_KEY environment variable."
+                    )
+                
+                self.vector_store = QdrantVectorStore(
+                    storage_path=str(self.playbook_dir),
+                    dimension=embedding_dim,
+                    url=qdrant_url_value,
+                    api_key=qdrant_api_key,
+                    collection_name=collection_name
+                )
+                
+                # Note: Playbook metadata (bullets JSON) is stored locally,
+                # but vector embeddings are stored externally in Qdrant server
+            except ImportError:
+                raise ImportError(
+                    "Qdrant client is not installed. Install with: pip install qdrant-client"
+                )
         else:
-            raise ValueError(f"Unsupported vector store: {vector_store}")
+            raise ValueError(
+                f"Unsupported vector store: {vector_store}. "
+                f"Must be one of: 'faiss', 'chromadb', 'qdrant', 'qdrant-cloud'"
+            )
         
         # Bullet storage
         self.bullets: List[Bullet] = []
@@ -94,6 +140,10 @@ class PlaybookManager:
         
         # Load existing playbook
         self.load_playbook()
+        
+        # Update ID mapping for Qdrant (if using Qdrant)
+        if vector_store in ["qdrant", "qdrant-cloud"]:
+            self._update_qdrant_id_mapping()
         
         print(f" PlaybookManager initialized with {len(self.bullets)} bullets")
     
@@ -126,6 +176,10 @@ class PlaybookManager:
             embeddings=embedding.reshape(1, -1),
             ids=[bullet_id]
         )
+        
+        # Update ID mapping for Qdrant (if using Qdrant)
+        if hasattr(self.vector_store, 'update_id_mapping'):
+            self.vector_store.update_id_mapping(self.bullet_id_to_index)
         
         # Save updated playbook
         self.save_playbook()
@@ -406,6 +460,40 @@ class PlaybookManager:
             print(f" Error loading playbook: {e}")
             self.bullets = []
             self.bullet_id_to_index = {}
+    
+    def _extract_collection_name(self) -> str:
+        """Extract collection name from playbook directory.
+        
+        Extracts the last directory name from playbook_dir and sanitizes it
+        for use as a Qdrant collection name.
+        
+        Returns:
+            Sanitized collection name
+        """
+        # Get the last directory name (e.g., /path/to/playbooks/my_app -> my_app)
+        collection_name = self.playbook_dir.name
+        
+        # Sanitize: lowercase and replace invalid chars
+        import re
+        collection_name = collection_name.lower()
+        collection_name = re.sub(r'[^a-z0-9_-]', '_', collection_name)
+        collection_name = re.sub(r'_+', '_', collection_name)
+        collection_name = collection_name.strip('_')
+        
+        # Ensure it's not empty
+        if not collection_name:
+            collection_name = "ace_playbook"
+        
+        return collection_name
+    
+    def _update_qdrant_id_mapping(self) -> None:
+        """Update ID to index mapping in QdrantVectorStore.
+        
+        This ensures that Qdrant search results can map bullet IDs back to
+        indices in the bullets list.
+        """
+        if hasattr(self.vector_store, 'update_id_mapping'):
+            self.vector_store.update_id_mapping(self.bullet_id_to_index)
     
     def _get_embedding(self, text: str) -> np.ndarray:
         """Get embedding for text using LangChain.
