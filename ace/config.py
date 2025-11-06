@@ -16,7 +16,7 @@ class ACEConfig:
     
     Args:
         playbook_name: Name of the playbook (used for storage path)
-        vector_store: Type of vector store ("faiss" or "chromadb")
+        vector_store: Type of vector store ("faiss", "chromadb", "qdrant", or "qdrant-cloud")
         storage_path: Custom storage path (default: ~/.ace/playbooks/{playbook_name})
         chat_model: Model name for chat operations (LangChain format: "provider:model")
         embedding_model: Model name for embeddings (LangChain format: "provider:model")
@@ -24,16 +24,57 @@ class ACEConfig:
         top_k: Number of relevant bullets to retrieve
         deduplication_threshold: Cosine similarity threshold for deduplication
         max_epochs: Maximum number of learning epochs
+        enable_tracing: Enable tracing for debugging
+        log_level: Logging level
+        qdrant_url: Qdrant server URL (default: "http://localhost:6333" for local Docker)
+        qdrant_api_key: Qdrant API key (required for "qdrant-cloud", optional for "qdrant")
+    
+    Defaults:
+        playbook_name: "default"
+        vector_store: "faiss"
+        storage_path: None (auto-generated as ~/.ace/playbooks/{playbook_name})
+        chat_model: "openai:gpt-4o-mini"
+        embedding_model: "openai:text-embedding-3-small"
+        temperature: 0.3
+        top_k: 10
+        deduplication_threshold: 0.9
+        max_epochs: 5
+        enable_tracing: False
+        log_level: "INFO"
+        qdrant_url: "http://localhost:6333"
+        qdrant_api_key: None (loaded from QDRANT_API_KEY env var for qdrant-cloud if not provided)
+    
+    Note:
+        For Qdrant vector stores:
+        - Playbook metadata (JSON files) → Stored LOCALLY in playbook_dir
+        - Vector embeddings → Stored EXTERNALLY in Qdrant server
+        - For "qdrant-cloud": qdrant_api_key is required (from config or QDRANT_API_KEY env var)
     
     Example:
+        >>> # FAISS (local vectors)
         >>> config = ACEConfig(
         ...     playbook_name="my_app",
         ...     vector_store="faiss",
         ...     chat_model="openai:gpt-4o-mini"
         ... )
+        >>> 
+        >>> # Qdrant local (Docker)
+        >>> config = ACEConfig(
+        ...     playbook_name="my_app",
+        ...     vector_store="qdrant",
+        ...     qdrant_url="http://localhost:6333"
+        ... )
+        >>> 
+        >>> # Qdrant Cloud
+        >>> config = ACEConfig(
+        ...     playbook_name="my_app",
+        ...     vector_store="qdrant-cloud",
+        ...     qdrant_url="https://your-cluster.qdrant.io",
+        ...     qdrant_api_key="your-api-key"
+        ... )
     """
     playbook_name: str = "default"
-    vector_store: str = "faiss"  # "faiss" or "chromadb"
+    vector_store: str = "faiss"  # "faiss", "chromadb", "qdrant", or "qdrant-cloud"
     storage_path: Optional[str] = None
     chat_model: str = "openai:gpt-4o-mini"
     embedding_model: str = "openai:text-embedding-3-small"
@@ -43,6 +84,8 @@ class ACEConfig:
     max_epochs: int = 5
     enable_tracing: bool = False
     log_level: str = "INFO"
+    qdrant_url: Optional[str] = "http://localhost:6333"
+    qdrant_api_key: Optional[str] = None
     
     def __post_init__(self):
         """Set up storage path and validate configuration."""
@@ -56,10 +99,20 @@ class ACEConfig:
         ensure_path_exists(self._storage_path)
         
         # Validate vector store type
-        if self.vector_store not in ["faiss", "chromadb"]:
+        valid_stores = ["faiss", "chromadb", "qdrant", "qdrant-cloud"]
+        if self.vector_store not in valid_stores:
             raise ValueError(
-                f"Invalid vector_store: {self.vector_store}. Must be 'faiss' or 'chromadb'"
+                f"Invalid vector_store: {self.vector_store}. Must be one of {valid_stores}"
             )
+        
+        # Handle Qdrant Cloud API key from environment
+        if self.vector_store == "qdrant-cloud" and self.qdrant_api_key is None:
+            self.qdrant_api_key = os.getenv("QDRANT_API_KEY")
+            if self.qdrant_api_key is None:
+                raise ValueError(
+                    "qdrant_api_key is required for 'qdrant-cloud'. "
+                    "Provide it in config or set QDRANT_API_KEY environment variable."
+                )
     
     @property
     def storage_path_obj(self) -> Path:
@@ -108,6 +161,8 @@ class ACEConfig:
             "max_epochs": self.max_epochs,
             "enable_tracing": self.enable_tracing,
             "log_level": self.log_level,
+            "qdrant_url": self.qdrant_url,
+            "qdrant_api_key": self.qdrant_api_key,
         }
 
 
