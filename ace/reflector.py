@@ -180,13 +180,39 @@ class Reflector:
             print(f"   Question: {question[:50]}...")
             print(f"   Type: {feedback_type}, Rating: {rating}/5")
         
+        # Extract additional context
+        model_reasoning = chat_data.get("model_reasoning", "")
+        ground_truth = chat_data.get("ground_truth", "")
+        used_bullets = chat_data.get("used_bullets", [])
+        
+        # Format playbook excerpts if bullets were used
+        playbook_excerpts = ""
+        if used_bullets:
+            # Get bullet details from chat_data if available
+            playbook_bullets = chat_data.get("playbook_bullets", [])
+            if playbook_bullets:
+                bullet_details = []
+                for bullet in playbook_bullets[:5]:  # Limit to top 5
+                    if hasattr(bullet, 'to_markdown'):
+                        bullet_details.append(bullet.to_markdown())
+                    elif hasattr(bullet, 'content'):
+                        bullet_details.append(f"- [{bullet.id if hasattr(bullet, 'id') else 'unknown'}] {bullet.content}")
+                if bullet_details:
+                    playbook_excerpts = "\n".join(bullet_details)
+            else:
+                # Fallback: just list bullet IDs
+                playbook_excerpts = "\n".join([f"- Bullet {bid}" for bid in used_bullets[:5]])
+        
         # Generate initial reflection
         reflection = self._generate_reflection(
             question=question,
             model_response=model_response,
             user_feedback=user_feedback,
             feedback_type=feedback_type,
-            rating=rating
+            rating=rating,
+            model_reasoning=model_reasoning,
+            ground_truth=ground_truth,
+            playbook_excerpts=playbook_excerpts
         )
         
         # Multi-iteration refinement (paper: up to 5 iterations)
@@ -198,7 +224,10 @@ class Reflector:
                 model_response=model_response,
                 user_feedback=user_feedback,
                 feedback_type=feedback_type,
-                rating=rating
+                rating=rating,
+                model_reasoning=model_reasoning,
+                ground_truth=ground_truth,
+                playbook_excerpts=playbook_excerpts
             )
         
         # Populate bullet_tags based on feedback and used_bullets (per research paper)
@@ -288,7 +317,10 @@ class Reflector:
         model_response: str,
         user_feedback: str,
         feedback_type: str,
-        rating: int
+        rating: int,
+        model_reasoning: str = "",
+        ground_truth: str = "",
+        playbook_excerpts: str = ""
     ) -> ReflectionInsight:
         """Use LLM to analyze feedback and extract insights.
         
@@ -318,6 +350,9 @@ class Reflector:
                 user_feedback=user_feedback,
                 feedback_type=feedback_type,
                 rating=rating,
+                model_reasoning=model_reasoning,
+                ground_truth=ground_truth,
+                playbook_excerpts=playbook_excerpts,
                 custom_template=self.analysis_template
             )
 
@@ -390,7 +425,10 @@ class Reflector:
         model_response: str,
         user_feedback: str,
         feedback_type: str,
-        rating: int
+        rating: int,
+        model_reasoning: str = "",
+        ground_truth: str = "",
+        playbook_excerpts: str = ""
     ) -> ReflectionInsight:
         """Refine reflection over multiple iterations (paper: up to 5).
         

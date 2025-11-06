@@ -117,11 +117,29 @@ class ACEAgent:
         # Call original agent
         response = self.base_agent.invoke(messages, **kwargs)
         
+        # Extract model reasoning if available (from structured response)
+        model_reasoning = ""
+        try:
+            # Try to extract reasoning from structured response
+            if isinstance(response, dict) and "messages" in response:
+                last_msg = response["messages"][-1]
+                if hasattr(last_msg, "content"):
+                    content = last_msg.content
+                    # Try to parse JSON if response is structured
+                    import json
+                    if content.strip().startswith("{"):
+                        parsed = json.loads(content)
+                        model_reasoning = parsed.get("reasoning", "")
+        except:
+            pass
+        
         # Store interaction for potential feedback
         self.last_interaction = {
             "question": query,
             "model_response": self._extract_response_content(response),
-            "used_bullets": self.used_bullets.copy()
+            "model_reasoning": model_reasoning,
+            "used_bullets": self.used_bullets.copy(),
+            "playbook_bullets": [self.playbook.bullets[i] for i in range(len(self.playbook.bullets)) if self.playbook.bullets[i].id in self.used_bullets] if self.used_bullets else []
         }
         
         # Auto-feedback mode: trigger auto-critique immediately
