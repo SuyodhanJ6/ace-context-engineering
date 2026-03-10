@@ -4,7 +4,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Self-improving AI agents through evolving playbooks.** Wrap any LangChain agent with ACE to enable learning from experience without fine-tuning.
+**Self-improving AI agents through evolving playbooks.** Use ACE as a **Context Provider** for any LLM framework (LangChain, OpenAI, etc.) to enable learning from experience without fine-tuning.
 
  **Based on research:** [Agentic Context Engineering (Stanford/SambaNova, 2025)](http://arxiv.org/pdf/2510.04618)
 
@@ -12,14 +12,14 @@
 
 ##  What is ACE?
 
-ACE enables AI agents to **learn and improve** by accumulating strategies in a "playbook" - a knowledge base that grows smarter with each interaction.
+ACE enables AI agents to **learn and improve** by accumulating strategies in a "playbook" - a knowledge base that grows smarter with each interaction. It now acts as a non-invasive **Context Provider**, giving you full control over your prompts while handling the heavy lifting of context retrieval and feedback analysis in the background.
 
 ### Key Benefits
 
--  **+17% task performance** improvement
--  **82% faster** adaptation to new domains  
--  **75% lower** computational cost vs fine-tuning
--  **Zero model changes** - works with any LLM
+-  **Developer Control**: Explicitly fetch context and inject it into your own prompts.
+-  **Azure OpenAI Support**: Native support for Azure deployments including custom credentials.
+-  **Non-Blocking Feedback**: Feedback analysis runs in background threads, keeping your app fast.
+-  **Framework Agnostic**: Works with LangChain, raw OpenAI SDK, Anthropic, or any other LLM client.
 
 ---
 
@@ -30,12 +30,8 @@ ACE enables AI agents to **learn and improve** by accumulating strategies in a "
 # Default (FAISS vector store)
 pip install ace-context-engineering
 
-# With ChromaDB support
-pip install ace-context-engineering[chromadb]
-
-# With Qdrant support
-pip install ace-context-engineering[qdrant]
-# or: pip install qdrant-client
+# With Azure OpenAI & LangChain Support
+pip install ace-context-engineering[openai,langchain]
 ```
 
 ### Using uv (Recommended)
@@ -43,120 +39,67 @@ pip install ace-context-engineering[qdrant]
 # Default (FAISS vector store)
 uv add ace-context-engineering
 
-# With ChromaDB support
-uv add ace-context-engineering[chromadb]
-
-# With Qdrant support
-uv add ace-context-engineering[qdrant]
-# or: uv add qdrant-client
+# With full support
+uv add ace-context-engineering[openai,langchain]
 ```
 
 **Environment Setup:**
 
 ```bash
-# Copy example environment file
-cp .env.example .env
-
-# Add your API key
+# Add your API keys to .env
 echo "OPENAI_API_KEY=your-key-here" >> .env
 ```
 
 ---
 
-##  Quick Start
+##  Quick Start (ACE as Context Provider)
 
-### 3-Step Integration
+ACE is designed to be non-invasive. You fetch context, inject it into your prompt, and submit feedback later.
+
+### 4-Step Integration
 
 ```python
-from ace import ACEConfig, ACEAgent, PlaybookManager
-from langchain.chat_models import init_chat_model
+from ace import ACEClient
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
 
-# 1. Configure ACE
-config = ACEConfig(
-    playbook_name="my_app",
-    vector_store="faiss",
-    top_k=10
-)
+# 1. Initialize ACE Client
+ace = ACEClient(playbook_name="my_app", vector_store="faiss")
 
-playbook = PlaybookManager(
-    playbook_dir=config.get_storage_path(),
-    vector_store=config.vector_store,
-    embedding_model=config.embedding_model
-)
+# 2. Fetch context based on user query
+user_query = "Process payment for order #12345"
+context_string, interaction_id = ace.get_context(user_query)
 
-# 2. Wrap your agent
-base_agent = init_chat_model("openai:gpt-4o-mini")
-agent = ACEAgent(
-    base_agent,
-    playbook,
-    config,
-    auto_inject=True  # Automatic context injection
-)
+# 3. Inject context into your own LLM call
+llm = ChatOpenAI(model="gpt-4o-mini")
+messages = [
+    SystemMessage(content=f"You are a helpful assistant.\n\n{context_string}"),
+    HumanMessage(content=user_query)
+]
+response = llm.invoke(messages)
 
-# 3. Use normally - ACE handles context automatically!
-response = agent.invoke([
-    {"role": "user", "content": "Process payment for order #12345"}
-])
-
-# 4. Provide feedback for learning (optional but recommended)
-chat_data = agent.get_last_interaction()  # Get interaction data
-result = agent.submit_feedback(
-    user_feedback="Payment processed successfully",
+# 4. Submit feedback in the background (Non-blocking)
+ace.submit_feedback(
+    interaction_id=interaction_id,
+    user_feedback="The agent correctly validated the order first.",
     rating=5,
-    chat_data=chat_data  # Explicit for production/parallel users
+    model_response=response.content
 )
 ```
 
-### Add Knowledge to Playbook
+### Azure OpenAI Support
+
+ACE supports Azure OpenAI for its internal Reflector logic. Simply use the `azure_openai:` prefix and pass explicit credentials via `chat_model_kwargs`.
 
 ```python
-# Add strategies manually
-playbook.add_bullet(
-    content="Always validate order exists before processing payment",
-    section="Payment Processing"
-)
-
-playbook.add_bullet(
-    content="Log all failed transactions with error codes",
-    section="Error Handling"
-)
-```
-
-### Learning from Feedback
-
-**Simple API (Recommended):**
-
-```python
-# After agent response, provide feedback
-chat_data = agent.get_last_interaction()  # Get current interaction data
-
-result = agent.submit_feedback(
-    user_feedback="Payment processed successfully",
-    rating=5,  # 1-5 scale
-    feedback_type="positive",
-    chat_data=chat_data  # Explicit for thread-safety in production
-)
-
-# ACE automatically:
-# 1. Reflector analyzes feedback → extracts insights
-# 2. Curator creates/updates playbook bullets
-# 3. Playbook improves for future interactions!
-```
-
-**For Async/Parallel Users:**
-
-```python
-# Use async API for better performance
-chat_data = {
-    "question": user_question,
-    "model_response": response.content,
-    "used_bullets": agent.get_used_bullets()
-}
-
-result = await agent.asubmit_feedback(
-    user_feedback="Great response!",
-    rating=5,
-    chat_data=chat_data  # Required for thread-safety
+ace = ACEClient(
+    playbook_name="azure_deployment",
+    chat_model="azure_openai:gpt-5-mini", # Deployment name
+    chat_model_kwargs={
+        "azure_endpoint": "https://your-resource.azure.com/",
+        "api_key": "your-key",
+        "api_version": "2024-10-01-preview"
+    }
 )
 ```
 
@@ -166,26 +109,20 @@ result = await agent.asubmit_feedback(
 
 ```
 ┌─────────────────┐
-│   Your Agent    │ ← Any LangChain agent
-│   (Generator)   │
+│   Your App      │ ← Full control over LLM & Prompts
+│   (Any Client)  │
 └─────────┬───────┘
-          │
+          │ (1) get_context(query)
           ▼
 ┌─────────────────┐
-│   ACEAgent      │ ← Automatic context injection
-│   Wrapper       │
+│   ACEClient     │ ← Dynamic context retrieval (Sync/Async)
+│  (Provider)     │
 └─────────┬───────┘
-          │
+          │ (2) submit_feedback()
           ▼
 ┌─────────────────┐
-│   Playbook      │ ← Semantic knowledge retrieval
-│   Manager       │
-└─────────────────┘
-          ▲
-          │
-┌─────────────────┐
-│   Reflector     │ ← Analyzes feedback
-│   + Curator     │ ← Updates playbook
+│   Reflector     │ ← Background Analysis (Azure/OpenAI)
+│   + Curator     │ ← Playbook Optimization
 └─────────────────┘
 ```
 
@@ -193,10 +130,11 @@ result = await agent.asubmit_feedback(
 
 | Component | Purpose | Uses LLM? | Key Features |
 |-----------|---------|-----------|-------------|
-| **ACEAgent** | Wraps your agent, injects context | No | Thread-safe with `chat_data` param, async support |
-| **PlaybookManager** | Stores & retrieves knowledge | No | Uses embeddings for semantic search |
-| **Reflector** | Analyzes feedback, extracts insights |  Yes | Multi-iteration refinement, auto-critique |
-| **Curator** | Updates playbook deterministically |  No | Uses embeddings for similarity matching (no LLM) |
+| **ACEClient** | Central API for context & feedback | No | Non-blocking, Sync/Async support |
+| **PlaybookManager** | Stores & retrieves knowledge | No | Semantic search via FAISS/Chroma/Qdrant |
+| **Reflector** | Analyzes feedback, extracts insights |  Yes | Multi-iteration refinement, Azure support |
+| **Curator** | Updates playbook deterministically |  No | Score-based rule optimization |
+| **ACEAgent** | *Legacy* wrapper (Deprecated) | No | Maintained for backward compatibility |
 
 ---
 
@@ -206,22 +144,15 @@ result = await agent.asubmit_feedback(
 from ace import ACEConfig
 
 config = ACEConfig(
-    playbook_name="my_app",           # Unique name for your app
-    vector_store="faiss",             # "faiss", "chromadb", "qdrant", or "qdrant-cloud"
-    storage_path="./.ace/playbooks",  # Optional: custom path
-    chat_model="openai:gpt-4o-mini",  # For Reflector (feedback analysis)
-    embedding_model="openai:text-embedding-3-small",  # For semantic search
-    temperature=0.3,                  # LLM temperature
-    top_k=10,                         # Number of bullets to retrieve
-    deduplication_threshold=0.9,      # Similarity threshold for deduplication
-    # Qdrant-specific (only needed for qdrant/qdrant-cloud)
-    qdrant_url="http://localhost:6333",  # Qdrant server URL
-    qdrant_api_key=None               # Required for qdrant-cloud, optional for qdrant
+    playbook_name="my_app",
+    chat_model="azure_openai:gpt-4o-mini", # For internal Reflector
+    chat_model_kwargs={"api_key": "..."},   # Direct LangChain kwargs
+    embedding_model="openai:text-embedding-3-small", 
+    top_k=5 
 )
-
-# Note: Curator does NOT use LLM - it's deterministic
-# Curator uses embeddings via PlaybookManager for similarity matching
 ```
+# Note: Curator does NOT use LLM - it's deterministic.
+# It uses embeddings via PlaybookManager for similarity matching.
 
 ### Storage Location
 
