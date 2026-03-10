@@ -1,14 +1,27 @@
 import unittest
+from unittest.mock import patch, MagicMock
 import os
 import shutil
 import tempfile
 from ace.client import ACEClient
-from ace.playbook.manager import PlaybookManager
 
 class TestACEClient(unittest.TestCase):
     def setUp(self):
         # Create a temporary directory for testing
         self.test_dir = tempfile.mkdtemp()
+        
+        # Mock embedding and chat model initialization
+        self.mock_init_embeddings = patch('ace.playbook.manager.init_embeddings').start()
+        self.mock_init_chat_model = patch('ace.reflector.init_chat_model').start()
+        
+        # Setup fake embedding model
+        self.fake_embedder = MagicMock()
+        self.fake_embedder.embed_query.return_value = [0.1] * 1536  # Standard dimension
+        self.mock_init_embeddings.return_value = self.fake_embedder
+        
+        # Setup fake chat model
+        self.fake_llm = MagicMock()
+        self.mock_init_chat_model.return_value = self.fake_llm
         
         # Initialize the ACEClient pointing to the temp dir
         self.ace = ACEClient(
@@ -17,11 +30,16 @@ class TestACEClient(unittest.TestCase):
             storage_path=self.test_dir
         )
         
-        # Seed the playbook with 2 dummy rules as per implementation plan
+        # Mock the internal pipeline to avoid background thread race conditions during cleanup
+        self.ace._process_feedback_pipeline = MagicMock()
+        
+        # Seed the playbook with 2 dummy rules
         self.ace.playbook.add_bullet("Dummy rule 1: Always respond politely.", section="Guidelines")
         self.ace.playbook.add_bullet("Dummy rule 2: Return output in JSON format.", section="Formatting")
 
     def tearDown(self):
+        # Stop mocks
+        patch.stopall()
         # Clean up the temporary directory after tests
         shutil.rmtree(self.test_dir)
 

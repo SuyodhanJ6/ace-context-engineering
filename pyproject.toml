@@ -48,6 +48,8 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "notebook>=7.4.7",
     "qdrant-client>=1.15.1",
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
 ]
 
 [project.optional-dependencies]
