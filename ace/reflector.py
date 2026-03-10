@@ -86,7 +86,8 @@ class Reflector:
         system_prompt: Optional[str] = None,
         analysis_template: Optional[str] = None,
         auto_critique_template: Optional[str] = None,
-        max_refinement_iterations: int = 1
+        max_refinement_iterations: int = 1,
+        model_kwargs: Optional[Dict[str, Any]] = None
     ):
         """Initialize Reflector with LLM and storage.
         
@@ -102,7 +103,8 @@ class Reflector:
         """
         # Initialize chat model using LangChain
         print(f" Initializing Reflector with model: {model}")
-        self.model = init_chat_model(model, temperature=temperature)
+        model_kwargs = model_kwargs or {}
+        self.model = init_chat_model(model, temperature=temperature, **model_kwargs)
         
         # Set up storage
         if storage_path:

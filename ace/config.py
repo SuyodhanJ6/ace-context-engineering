@@ -86,6 +86,8 @@ class ACEConfig:
     log_level: str = "INFO"
     qdrant_url: Optional[str] = "http://localhost:6333"
     qdrant_api_key: Optional[str] = None
+    chat_model_kwargs: Dict[str, Any] = field(default_factory=dict)
+    embedding_model_kwargs: Dict[str, Any] = field(default_factory=dict)
     
     def __post_init__(self):
         """Set up storage path and validate configuration."""
@@ -163,6 +165,8 @@ class ACEConfig:
             "log_level": self.log_level,
             "qdrant_url": self.qdrant_url,
             "qdrant_api_key": self.qdrant_api_key,
+            "chat_model_kwargs": self.chat_model_kwargs,
+            "embedding_model_kwargs": self.embedding_model_kwargs,
         }
 
 

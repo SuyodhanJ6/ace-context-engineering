@@ -46,7 +46,8 @@ class PlaybookManager:
         embedding_model: str = "openai:text-embedding-3-small",
         embedding_dim: int = 1536,
         qdrant_url: Optional[str] = None,
-        qdrant_api_key: Optional[str] = None
+        qdrant_api_key: Optional[str] = None,
+        embedding_model_kwargs: Optional[Dict[str, Any]] = None
     ):
         """Initialize PlaybookManager with vector store and embeddings.
         
@@ -57,6 +58,7 @@ class PlaybookManager:
             embedding_dim: Dimension of embeddings (default: 1536)
             qdrant_url: Qdrant server URL (required for qdrant/qdrant-cloud)
             qdrant_api_key: Qdrant API key (required for qdrant-cloud, optional for qdrant)
+            embedding_model_kwargs: Additional kwargs for embedding model initialization
         """
         # Set up storage path
         if playbook_dir is None:
@@ -67,7 +69,8 @@ class PlaybookManager:
         
         # Initialize embedding model using LangChain
         print(f" Initializing embedding model: {embedding_model}")
-        self.embedding_model = init_embeddings(embedding_model)
+        embedding_model_kwargs = embedding_model_kwargs or {}
+        self.embedding_model = init_embeddings(embedding_model, **embedding_model_kwargs)
         self.embedding_dim = embedding_dim
         
         # Initialize vector store based on type

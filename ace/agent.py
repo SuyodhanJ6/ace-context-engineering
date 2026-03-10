@@ -76,6 +76,14 @@ class ACEAgent:
                           - True: Auto-critique after each response (no waiting for user feedback)
                           - False: Wait for explicit user feedback
         """
+        import warnings
+        warnings.warn(
+            "ACEAgent is deprecated and will be removed in a future version. "
+            "Please migrate to using `ACEClient` which acts as a Context Provider "
+            "rather than wrapping the agent directly. See docs/integration_plan.md.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         self.base_agent = base_agent
         self.playbook = playbook_manager
         self.config = config

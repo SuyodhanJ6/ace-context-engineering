@@ -16,6 +16,7 @@ __author__ = "Suyodhan J"
 __email__ = "suyodhanj6@gmail.com"
 
 # Core components
+from ace.client import ACEClient
 from ace.reflector import Reflector, ReflectionInsight
 from ace.curator import Curator, DeltaUpdate, DeltaOperation
 from ace.agent import ACEAgent
@@ -36,6 +37,7 @@ from ace.vectorstores.faiss import FAISSVectorStore
 
 __all__ = [
     # Core components
+    "ACEClient",
     "Reflector",
     "ReflectionInsight",
     "Curator",

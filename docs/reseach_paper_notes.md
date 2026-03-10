@@ -212,4 +212,34 @@ playbook.merge(delta)  # Deterministic, no LLM
 - **Lazy:** Only when context exceeds 80% of window
 - **Periodic:** Every N updates
 
+## 📊 Results & Performance
+
+### 1. Agent Benchmark (AppWorld)
+- ACE consistently improves over strong baselines in both offline and online settings.
+- **Offline setting:** Outperforms ReAct + ICL by 12.3% and ReAct + GEPA by 11.9%.
+- **Online setting:** Outperforms prior adaptive methods like Dynamic Cheatsheet (DC) by an average of 7.6%.
+- Even **without ground-truth labels**, ACE improves ReAct by 14.8% by leveraging natural execution feedback.
+- ACE (using DeepSeek-V3.1) matches the top-ranked IBM CUGA (a production-level GPT-4.1 based agent) on the overall average and **surpasses it** on the harder test-challenge split.
+
+### 2. Domain-Specific Benchmark (Financial Analysis)
+- In the offline setting, ACE surpasses ICL, MIPROv2, and GEPA by an average of 10.9%.
+- In the online setting, it exceeds DC by an average of 6.2%.
+- *Limitation:* ACE relies on reliable feedback sequences; without ground-truth supervision or execution signals, the context can be polluted by spurious signals.
+
+### 3. Cost and Speed Analysis
+- ACE's incremental "delta" updates and non-LLM based merging significantly reduce costs compared to baseline optimization methods.
+- **Latency:** 82.3% reduction in adaptation latency compared to GEPA (offline) and 91.5% reduction compared to DC (online).
+- **Cost:** 83.6% reduction in token dollar cost (ingestion and generation) compared to DC.
+
 ---
+
+## 🔮 Discussion & Implications
+
+### Longer Context ≠ Higher Serving Cost
+Despite generating longer contexts than methods like GEPA, ACE is cost-effective because modern serving infrastructure is optimized for long-context workloads:
+- Techniques like KV cache reuse, compression, and offloading allow frequently reused context segments to be cached.
+- This avoids repetitive and expensive prefill operations, making ACE highly practical in deployment.
+
+### Continuous & Selective Learning
+- ACE provides a flexible alternative to model fine-tuning (modifying contexts is cheaper than updating weights).
+- Since contexts are human-interpretable, ACE inherently supports **selective unlearning** (e.g., for privacy, legal constraints, or removing outdated information) without needing complex unlearning procedures across model weights.
